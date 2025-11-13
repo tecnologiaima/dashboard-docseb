@@ -2,31 +2,75 @@
 
 import { useEffect, useRef, useState } from "react";
 
-const PLACEHOLDER_RESPONSE =
-  "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed vel lacus interdum, vulputate libero nec, sagittis neque.";
-const THINKING_DELAY = 900;
+const API_URL =
+  "https://docseb-ai-229745866329.northamerica-south1.run.app/modelsAI/message";
+const SESSION_ID_LENGTH = 8;
+const SESSION_CHARSET =
+  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const TYPING_STEP = 2;
 const TYPING_INTERVAL = 35;
+
+const generateSessionId = () => {
+  let id = "";
+  for (let i = 0; i < SESSION_ID_LENGTH; i += 1) {
+    const index = Math.floor(Math.random() * SESSION_CHARSET.length);
+    id += SESSION_CHARSET.charAt(index);
+  }
+  return id;
+};
+
+const getTextFromParts = (parts) =>
+  Array.isArray(parts)
+    ? parts
+        .map((part) =>
+          typeof part?.text === "string" ? part.text.trim() : ""
+        )
+        .filter(Boolean)
+        .join("\n")
+    : "";
+
+const buildMessagesFromHistory = (history) => {
+  if (!Array.isArray(history)) return [];
+  const timestamp = Date.now();
+
+  return history
+    .map((entry, index) => {
+      const normalizedRole =
+        entry?.role === "model"
+          ? "assistant"
+          : entry?.role === "user"
+            ? "user"
+            : null;
+      if (!normalizedRole) return null;
+
+      return {
+        id: `${normalizedRole}-${timestamp}-${index}`,
+        role: normalizedRole,
+        content: getTextFromParts(entry?.parts),
+        status: "complete",
+      };
+    })
+    .filter(Boolean);
+};
+
+const getLastAssistantIndex = (items) => {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (items[index]?.role === "assistant") {
+      return index;
+    }
+  }
+  return -1;
+};
 
 export default function ChatMain({ palette }) {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState("");
   const [isThinking, setIsThinking] = useState(false);
-  const timeoutsRef = useRef([]);
+  const [sessionId] = useState(() => generateSessionId());
   const typingIntervalRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  const scheduleTimeout = (callback, delay) => {
-    const timeoutId = setTimeout(() => {
-      callback();
-      timeoutsRef.current = timeoutsRef.current.filter((id) => id !== timeoutId);
-    }, delay);
-    timeoutsRef.current.push(timeoutId);
-  };
-
-  const clearAsyncRefs = () => {
-    timeoutsRef.current.forEach((id) => clearTimeout(id));
-    timeoutsRef.current = [];
+  const clearTypingInterval = () => {
     if (typingIntervalRef.current) {
       clearInterval(typingIntervalRef.current);
       typingIntervalRef.current = null;
@@ -35,7 +79,7 @@ export default function ChatMain({ palette }) {
 
   useEffect(() => {
     return () => {
-      clearAsyncRefs();
+      clearTypingInterval();
     };
   }, []);
 
@@ -59,7 +103,7 @@ export default function ChatMain({ palette }) {
 
     setMessages((prev) => [...prev, userMessage]);
     setInputValue("");
-    triggerAssistantResponse();
+    triggerAssistantResponse(trimmed);
   };
 
   const handleKeyDown = (event) => {
@@ -69,10 +113,9 @@ export default function ChatMain({ palette }) {
     }
   };
 
-  const triggerAssistantResponse = () => {
-    setIsThinking(true);
-
+  const triggerAssistantResponse = async (userContent) => {
     const assistantId = `assistant-${Date.now()}`;
+    setIsThinking(true);
     setMessages((prev) => [
       ...prev,
       {
@@ -83,21 +126,90 @@ export default function ChatMain({ palette }) {
       },
     ]);
 
-    scheduleTimeout(() => {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === assistantId ? { ...msg, status: "typing" } : msg
-        )
+    let isAnimatingResponse = false;
+
+    try {
+      const response = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userContent,
+          session_id: sessionId,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Solicitud fallida con estado ${response.status}`);
+      }
+
+      const data = await response.json();
+      const historyMessages = buildMessagesFromHistory(
+        data?.conversationHistory
       );
 
-      startTypingResponse(assistantId, PLACEHOLDER_RESPONSE);
-    }, THINKING_DELAY);
+      if (historyMessages.length) {
+        const lastAssistantIndex = getLastAssistantIndex(historyMessages);
+
+        if (lastAssistantIndex >= 0) {
+          const assistantText =
+            historyMessages[lastAssistantIndex]?.content || "";
+
+          historyMessages[lastAssistantIndex] = {
+            ...historyMessages[lastAssistantIndex],
+            id: assistantId,
+            content: assistantText ? "" : assistantText,
+            status: assistantText ? "typing" : "complete",
+          };
+
+          setMessages(historyMessages);
+
+          if (assistantText) {
+            isAnimatingResponse = true;
+            startTypingResponse(assistantId, assistantText);
+          }
+
+          return;
+        }
+
+        setMessages(historyMessages);
+        return;
+      }
+
+      const fallbackText =
+        typeof data?.message === "string" && data.message.trim()
+          ? data.message.trim()
+          : "No pude obtener la respuesta, intenta nuevamente.";
+
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantId
+            ? { ...msg, content: fallbackText, status: "complete" }
+            : msg
+        )
+      );
+    } catch (error) {
+      console.error("Error fetching assistant response:", error);
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === assistantId
+            ? {
+                ...msg,
+                content:
+                  "Ocurrió un error al comunicarse con la IA. Intenta otra vez.",
+                status: "complete",
+              }
+            : msg
+        )
+      );
+    } finally {
+      if (!isAnimatingResponse) {
+        setIsThinking(false);
+      }
+    }
   };
 
   const startTypingResponse = (messageId, text) => {
-    if (typingIntervalRef.current) {
-      clearInterval(typingIntervalRef.current);
-    }
+    clearTypingInterval();
 
     let index = 0;
 
@@ -118,8 +230,7 @@ export default function ChatMain({ palette }) {
       );
 
       if (index >= text.length) {
-        clearInterval(typingIntervalRef.current);
-        typingIntervalRef.current = null;
+        clearTypingInterval();
         setIsThinking(false);
       }
     }, TYPING_INTERVAL);
