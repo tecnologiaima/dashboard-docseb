@@ -17,6 +17,7 @@ import {
 import { computeIksScores, pointsFromFlexion, deductionFromFlexionContracture, deductionFromActiveExtensionDeficit, deductionFromAlignment } from "../utils/iksScore";
 import { KOOS_QUESTIONS, KOOS_SECTIONS } from "../data/koos";
 import { computeKoosScores } from "../utils/koosScore";
+import ChatMain from "./chat";
 
 const FORM_FIELD_MAP = {
   IKDC: "ikdc",
@@ -180,10 +181,11 @@ const TABLE_COLUMNS = [
   { key: "fechaNacimiento", label: "Fecha de nacimiento" },
   { key: "operado", label: "¿Operado?" },
   ...OPTIONS.map((f) => ({ key: f, label: f })),
+  { key: "detalles", label: "Detalles" },
 ];
 
 // Claves que deben ir centradas (thead y tbody)
-const CENTER_KEYS = new Set(["sexo", "fechaNacimiento", "operado", ...OPTIONS]);
+const CENTER_KEYS = new Set(["sexo", "fechaNacimiento", "operado", ...OPTIONS, "detalles"]);
 
 // Anchos fijos por columna
 const COL_WIDTHS = [
@@ -197,6 +199,7 @@ const COL_WIDTHS = [
   110, // WOMAC (centro)
   110, // IKS (centro)
   110, // KOOS (centro)
+  110, // detalles (centro)
 ];
 
 const TRUNCATE_STYLE = {
@@ -379,6 +382,15 @@ function XIcon({ size = 18, color = "currentColor" }) {
     </svg>
   );
 }
+function DotsIcon({ size = 18, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false" style={{ display: "block" }}>
+      <circle cx="6" cy="12" r="1.6" fill={color} />
+      <circle cx="12" cy="12" r="1.6" fill={color} />
+      <circle cx="18" cy="12" r="1.6" fill={color} />
+    </svg>
+  );
+}
 
 export default function DashboardMain({ palette }) {
   const [open, setOpen] = useState(false);
@@ -389,6 +401,8 @@ export default function DashboardMain({ palette }) {
   const [error, setError] = useState(null);
   const [formDetailModal, setFormDetailModal] = useState(null);
   const [historicalModal, setHistoricalModal] = useState(null);
+  const [openRowMenu, setOpenRowMenu] = useState(null);
+  const [chatModal, setChatModal] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -426,6 +440,32 @@ export default function DashboardMain({ palette }) {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!openRowMenu) return undefined;
+    const doc = typeof document !== "undefined" ? document : null;
+    const win = typeof window !== "undefined" ? window : null;
+    if (!doc || !win) return undefined;
+
+    const handleClickOutside = (event) => {
+      const isTrigger = event.target.closest?.('[data-row-menu-trigger="true"]');
+      const isPanel = event.target.closest?.('[data-row-menu-panel="true"]');
+      if (!isTrigger && !isPanel) {
+        setOpenRowMenu(null);
+      }
+    };
+    const handleCloseOnMove = () => setOpenRowMenu(null);
+
+    doc.addEventListener("mousedown", handleClickOutside);
+    win.addEventListener("resize", handleCloseOnMove);
+    win.addEventListener("scroll", handleCloseOnMove, true);
+
+    return () => {
+      doc.removeEventListener("mousedown", handleClickOutside);
+      win.removeEventListener("resize", handleCloseOnMove);
+      win.removeEventListener("scroll", handleCloseOnMove, true);
+    };
+  }, [openRowMenu]);
 
   const toggleOption = (name) => {
     setCopyState("idle");
@@ -469,6 +509,68 @@ export default function DashboardMain({ palette }) {
       setTimeout(() => setCopyState("idle"), 2200);
     }
   };
+
+  const toggleRowActionsMenu = (row, target) => {
+    if (!target) return;
+    setOpenRowMenu((prev) => {
+      if (prev?.rowId === row.id) return null;
+      const rect = target.getBoundingClientRect();
+      const viewportWidth = typeof window !== "undefined" ? window.innerWidth : 0;
+      const viewportHeight = typeof window !== "undefined" ? window.innerHeight : 0;
+
+      return {
+        rowId: row.id,
+        rowData: row,
+        anchorRect: {
+          top: rect.top,
+          bottom: rect.bottom,
+          left: rect.left,
+          right: rect.right,
+          width: rect.width,
+          height: rect.height,
+        },
+        viewport: {
+          width: viewportWidth,
+          height: viewportHeight,
+        },
+      };
+    });
+  };
+
+  const handleRowMenuAction = (action) => {
+    if (!openRowMenu?.rowData) return;
+    if (action === "chat") {
+      setChatModal({ row: openRowMenu.rowData });
+    }
+    setOpenRowMenu(null);
+  };
+
+  const rowMenuPosition = openRowMenu
+    ? (() => {
+        const width = 160;
+        const gutter = 12;
+        const viewportWidth =
+          openRowMenu.viewport?.width ??
+          (typeof window !== "undefined" ? window.innerWidth : 0);
+        const viewportHeight =
+          openRowMenu.viewport?.height ??
+          (typeof window !== "undefined" ? window.innerHeight : 0);
+        const safeViewportWidth = viewportWidth || width + gutter * 2;
+        const safeViewportHeight =
+          viewportHeight || openRowMenu.anchorRect.bottom + 8 + 60;
+        const desiredLeft = openRowMenu.anchorRect.right - width;
+        const left = Math.max(
+          gutter,
+          Math.min(safeViewportWidth - gutter - width, desiredLeft),
+        );
+        const desiredTop = openRowMenu.anchorRect.bottom + 8;
+        const top = Math.max(
+          gutter,
+          Math.min(safeViewportHeight - gutter - 10, desiredTop),
+        );
+        return { left, top, width };
+      })()
+    : null;
 
   const openFormDetailModal = (formName, row) => {
     const entries = row.formDetails?.[formName] ?? [];
@@ -566,6 +668,21 @@ export default function DashboardMain({ palette }) {
       historicalEntries,
     });
   };
+
+  const closeChatModal = () => setChatModal(null);
+
+  const chatPatientRow = chatModal?.row ?? null;
+  const normalizeText = (value) => (typeof value === "string" ? value.trim() : "");
+  const normalizedName = normalizeText(chatPatientRow?.nombre);
+  const normalizedEmail = normalizeText(chatPatientRow?.email);
+  const chatPatientName = chatPatientRow
+    ? (normalizedName && normalizedName !== "—"
+        ? normalizedName
+        : normalizedEmail && normalizedEmail !== "—"
+          ? normalizedEmail
+          : "Chat IA")
+    : null;
+  const chatPatientEmail = normalizedEmail && normalizedEmail !== "—" ? normalizedEmail : null;
 
   const closeFormDetailModal = () => setFormDetailModal(null);
 
@@ -1010,12 +1127,72 @@ export default function DashboardMain({ palette }) {
                       </td>
                     );
                   })}
+
+                  {/* Columna de detalles */}
+                  <td style={tdStyle("detalles")}>
+                    <div style={{ display: "grid", placeItems: "center" }}>
+                      <button
+                        type="button"
+                        data-row-menu-trigger="true"
+                        onClick={(event) => toggleRowActionsMenu(r, event.currentTarget)}
+                        title="Ver detalles"
+                        aria-label="Ver detalles"
+                        style={{
+                          border: "none",
+                          background: "transparent",
+                          padding: 0,
+                          cursor: "pointer",
+                          display: "grid",
+                          placeItems: "center",
+                        }}
+                      >
+                        <DotsIcon color={palette.accent} />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
                 ))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {rowMenuPosition && (
+        <div
+          data-row-menu-panel="true"
+          style={{
+            position: "fixed",
+            top: rowMenuPosition.top,
+            left: rowMenuPosition.left,
+            width: rowMenuPosition.width,
+            padding: 6,
+            borderRadius: 10,
+            border: `1px solid ${palette.border}`,
+            background: "rgba(3,23,24,0.95)",
+            boxShadow: "0 24px 50px rgba(0,0,0,0.45)",
+            zIndex: 50,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => handleRowMenuAction("chat")}
+            style={{
+              width: "100%",
+              border: "none",
+              background: "transparent",
+              color: palette.text,
+              textAlign: "left",
+              fontSize: 13,
+              fontWeight: 600,
+              padding: "8px 10px",
+              borderRadius: 8,
+              cursor: "pointer",
+            }}
+          >
+            Chat
+          </button>
+        </div>
+      )}
 
       {/* Dialog */}
       {open && (
@@ -1195,6 +1372,87 @@ export default function DashboardMain({ palette }) {
               >
                 Copiar
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {chatModal && (
+        <div
+          onClick={closeChatModal}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            backdropFilter: "blur(4px)",
+            display: "grid",
+            placeItems: "center",
+            padding: "24px 16px",
+            zIndex: 10500,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Chat con paciente"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(1180px, 92vw)",
+              maxHeight: "92vh",
+              borderRadius: 22,
+              border: `1px solid ${palette.border}`,
+              overflow: "hidden",
+              boxShadow: "0 30px 120px rgba(0,0,0,0.55)",
+              background: "rgba(3,23,24,0.9)",
+              display: "flex",
+              flexDirection: "column",
+              position: "relative",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "14px 18px",
+                borderBottom: `1px solid ${palette.border}`,
+                background: "linear-gradient(180deg, rgba(3,23,24,0.65), rgba(3,23,24,0.35))",
+                gap: 12,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 12, letterSpacing: 1, textTransform: "uppercase", color: palette.textMuted }}>
+                  Conversación
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: palette.text }}>
+                  {chatPatientName || "Chat IA"}
+                </div>
+                {chatPatientEmail && (
+                  <div style={{ fontSize: 13, color: palette.textMuted }}>{chatPatientEmail}</div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={closeChatModal}
+                aria-label="Cerrar chat"
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: "50%",
+                  border: `1px solid ${palette.border}`,
+                  background: "rgba(3,23,24,0.65)",
+                  color: palette.text,
+                  cursor: "pointer",
+                  fontSize: 18,
+                  fontWeight: 700,
+                  padding: 0,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+              <ChatMain palette={palette} />
             </div>
           </div>
         </div>

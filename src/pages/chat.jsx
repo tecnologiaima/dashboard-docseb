@@ -43,8 +43,8 @@ const buildMessagesFromHistory = (history) => {
         entry?.role === "model"
           ? "assistant"
           : entry?.role === "user"
-            ? "user"
-            : null;
+          ? "user"
+          : null;
       if (!normalizedRole) return null;
 
       return {
@@ -74,11 +74,36 @@ export default function ChatMain({ palette }) {
   const typingIntervalRef = useRef(null);
   const messagesEndRef = useRef(null);
 
+  // Fade dinámico
+  const scrollAreaRef = useRef(null);
+  const [showTopFade, setShowTopFade] = useState(false);
+  const [showBottomFade, setShowBottomFade] = useState(false);
+
   const clearTypingInterval = () => {
     if (typingIntervalRef.current) {
       clearInterval(typingIntervalRef.current);
       typingIntervalRef.current = null;
     }
+  };
+
+  const updateScrollFades = () => {
+    const el = scrollAreaRef.current;
+    if (!el) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = el;
+
+    // Si no hay overflow, ocultamos difuminados
+    if (scrollHeight <= clientHeight + 1) {
+      if (showTopFade) setShowTopFade(false);
+      if (showBottomFade) setShowBottomFade(false);
+      return;
+    }
+
+    const nextShowTop = scrollTop > 4;
+    const nextShowBottom = scrollTop + clientHeight < scrollHeight - 4;
+
+    if (nextShowTop !== showTopFade) setShowTopFade(nextShowTop);
+    if (nextShowBottom !== showBottomFade) setShowBottomFade(nextShowBottom);
   };
 
   useEffect(() => {
@@ -91,6 +116,8 @@ export default function ChatMain({ palette }) {
     if (messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
+    updateScrollFades();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages]);
 
   const handleSubmit = () => {
@@ -257,6 +284,10 @@ export default function ChatMain({ palette }) {
     },
   ];
 
+  const handleScroll = () => {
+    updateScrollFades();
+  };
+
   return (
     <div
       style={{
@@ -321,6 +352,7 @@ export default function ChatMain({ palette }) {
               }}
             >
               <div
+                ref={scrollAreaRef}
                 className="chat-scroll-area"
                 style={{
                   display: "flex",
@@ -328,8 +360,12 @@ export default function ChatMain({ palette }) {
                   gap: 18,
                   maxHeight: "60vh",
                   overflowY: "auto",
-                  paddingRight: 8,
+                  paddingRight: 48,
+                  paddingLeft: 48,      // 👈 nuevo: aire lateral
+                  paddingTop: 4,
+                  paddingBottom: 72,   // sigue evitando que el fade tape el bottom
                 }}
+                onScroll={handleScroll}
               >
                 {messages.map((msg) => {
                   const isUser = msg.role === "user";
@@ -401,8 +437,13 @@ export default function ChatMain({ palette }) {
                 })}
                 <div ref={messagesEndRef} />
               </div>
-              <div className="chat-scroll-fade chat-scroll-fade--top" />
-              <div className="chat-scroll-fade chat-scroll-fade--bottom" />
+
+              {showTopFade && (
+                <div className="chat-scroll-fade chat-scroll-fade--top" />
+              )}
+              {showBottomFade && (
+                <div className="chat-scroll-fade chat-scroll-fade--bottom" />
+              )}
             </div>
           </div>
         ) : (
@@ -539,7 +580,8 @@ export default function ChatMain({ palette }) {
               color: palette.ink,
               fontWeight: 700,
               fontSize: 14,
-              cursor: !inputValue.trim() || isThinking ? "not-allowed" : "pointer",
+              cursor:
+                !inputValue.trim() || isThinking ? "not-allowed" : "pointer",
               opacity: !inputValue.trim() || isThinking ? 0.5 : 1,
               boxShadow: "0 10px 25px rgba(210,242,82,0.35)",
               transition: "opacity 0.2s ease",
@@ -548,7 +590,6 @@ export default function ChatMain({ palette }) {
             ↗
           </button>
         </div>
-
       </div>
     </div>
   );

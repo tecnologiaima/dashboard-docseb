@@ -1,0 +1,92 @@
+.chat-scroll-wrapper {
+  position: relative;
+}
+
+.chat-scroll-area {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.chat-scroll-area::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.chat-scroll-fade {
+  pointer-events: none;
+  position: absolute;
+  left: 0;
+  right: 8px;
+  height: 36px;
+  z-index: 2;
+}
+
+.chat-scroll-fade--top {
+  top: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(3, 23, 24, 0.9) 0%,
+    rgba(3, 23, 24, 0) 100%
+  );
+}
+
+.chat-scroll-fade--bottom {
+  bottom: 0;
+  background: linear-gradient(
+    0deg,
+    rgba(3, 23, 24, 0.95) 0%,
+    rgba(3, 23, 24, 0) 100%
+  );
+}
+
+.chat-markdown {
+  font-size: 14px;
+  line-height: 1.7;
+  color: rgba(233, 255, 208, 0.95);
+}
+
+.chat-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-markdown p {
+  margin: 0 0 0.85em;
+}
+
+.chat-markdown h1,
+.chat-markdown h2,
+.chat-markdown h3,
+.chat-markdown h4 {
+  margin: 0 0 0.75em;
+  font-weight: 600;
+  color: #f8ffcf;
+}
+
+.chat-markdown ul,
+.chat-markdown ol {
+  margin: 0 0 0.85em;
+  padding-left: 1.2em;
+}
+
+.chat-markdown li + li {
+  margin-top: 0.35em;
+}
+
+.chat-markdown strong {
+  color: #f1ff9f;
+}
+
+.chat-markdown blockquote {
+  margin: 0 0 0.85em;
+  padding-left: 1em;
+  border-left: 2px solid rgba(210, 242, 82, 0.35);
+  color: rgba(233, 255, 208, 0.75);
+}
+
+.chat-markdown code {
+  display: inline-block;
+  padding: 0.15em 0.35em;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.25);
+  font-size: 0.95em;
+}
